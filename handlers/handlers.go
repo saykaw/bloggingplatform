@@ -1,28 +1,23 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/saykaw/bloggingplatform/models"
 	"gorm.io/gorm"
 )
 
 func Home(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		rw.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
 	fmt.Fprintf(rw, "This is the home page. Welcome!")
 }
 
 func CreatePostHandler(db *gorm.DB) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			rw.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		blogPost := models.BlogPost{}
 		decoder := json.NewDecoder(r.Body) //kisko decode karna hai
 		decoder.Decode(&blogPost)          //kisme decode karna hai
@@ -47,10 +42,6 @@ func CreatePostHandler(db *gorm.DB) http.HandlerFunc {
 func ListPostHandler(db *gorm.DB) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 
-		if r.Method != http.MethodGet {
-			rw.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		blogPost := []models.BlogPost{}
 		encoder := json.NewEncoder(rw)
 		result := db.Find(&blogPost)
@@ -65,7 +56,62 @@ func ListPostHandler(db *gorm.DB) http.HandlerFunc {
 			fmt.Printf("No rows were found.\n")
 			return
 		} else {
-			fmt.Printf("number of rows found: %v", result.RowsAffected)
+			fmt.Printf("number of rows found: %v\n", result.RowsAffected)
 		}
 	}
 }
+
+func GetPostHandler(db *gorm.DB) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		idParam := chi.URLParam(r, "id")
+		id, err := strconv.Atoi(idParam)
+		if err != nil {
+			fmt.Printf("theres an error in converting id into uint")
+		}
+		ctx := context.Background()
+		post, err := gorm.G[models.BlogPost](db).Where("id = ?", id).First(ctx)
+		if err != nil {
+			fmt.Printf("theres an error in finding post with id %v\n", id)
+		}
+		encoder := json.NewEncoder(rw)
+		encoder.Encode(&post)
+	}
+}
+
+func UpdatePostHandler(db *gorm.DB) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		idParam := chi.URLParam(r, "id")
+		id, err := strconv.Atoi(idParam)
+		if err != nil {
+			fmt.Printf("theres an error in converting id into uint")
+		}
+		blogPost := models.BlogPost{}
+		decoder := json.NewDecoder(r.Body)
+		decoder.Decode(&blogPost)
+		ctx := context.Background()
+		rows, err := gorm.G[models.BlogPost](db).Where("id = ?", id).Updates(ctx, models.BlogPost{Title: blogPost.Title, Content: blogPost.Content, Category: blogPost.Category})
+		if err != nil {
+			fmt.Printf("theres an error :%v\n", err)
+		}
+		if rows == 0 {
+			fmt.Printf("no blog updated, you might have to create it")
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write([]byte("blog not found, you might have to create it!"))
+			return
+		}
+	}
+}
+
+func DeletePostHandler(db *gorm.DB) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		idParam := chi.URLParam(r, "id")
+		id, err := strconv.Atoi(idParam)
+		if err != nil {
+			fmt.Printf("theres an error in converting id into uint")
+		}
+		db.Delete(&models.BlogPost{}, id)
+	}
+}
+
+//TODO: when the blod is deleted , the user can still get the blod (although its empty fields), so if the id doesnt exist return bad request
+//(might have to create the blog)
